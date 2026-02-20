@@ -10,12 +10,21 @@ export class CdkPizzaStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    // SQS
+    const pendingOrdersQueue = new Queue(this, 'PendingOrdersQueue', {});
+    const ordersToSendQueue = new Queue(this, 'OrdersToSendQueue', {});
+
     // Functions
     const newOrderFunction = new Function(this, 'NewOrderFunction', {
       runtime: Runtime.NODEJS_24_X,
       handler: 'handler.newOrder',
       code: Code.fromAsset('lib/functions'),
+      environment: {
+        PENDING_ORDERS_QUEUE_URL: pendingOrdersQueue.queueUrl
+      }
     });
+
+    pendingOrdersQueue.grantSendMessages(newOrderFunction)
 
     const getOrderFunction = new Function(this, 'GetOrderFunction', {
       runtime: Runtime.NODEJS_24_X,
@@ -29,6 +38,21 @@ export class CdkPizzaStack extends cdk.Stack {
       code: Code.fromAsset('lib/functions')
     });
 
+    prepOrderFunction.addEventSource(new SqsEventSource(pendingOrdersQueue, {
+      batchSize: 1
+    }));
+
+    const sendOrderFunction = new Function(this, 'SendOrderFunction', {
+      runtime: Runtime.NODEJS_24_X,
+      handler: 'handler.sendOrder',
+      code: Code.fromAsset('lib/functions'),
+      environment: {
+        ORDERS_TO_SEND_QUEUE_URL: ordersToSendQueue.queueUrl
+      }
+    })
+
+    ordersToSendQueue.grantSendMessages(sendOrderFunction)
+
     // API Gateway
     const api = new RestApi(this, 'PizzaApi', {
       restApiName: 'Pizza CDK Service'
@@ -38,10 +62,6 @@ export class CdkPizzaStack extends cdk.Stack {
     orderResource.addMethod('POST', new LambdaIntegration(newOrderFunction));
     orderResource.addResource('{orderId}').addMethod('GET', new LambdaIntegration(getOrderFunction));
 
-    // SQS
-    const pendingOrdersQueue = new Queue(this, 'PendingOrdersQueue', {});
-    prepOrderFunction.addEventSource(new SqsEventSource(pendingOrdersQueue, {
-      batchSize: 1
-    }));
+    
   }
 }

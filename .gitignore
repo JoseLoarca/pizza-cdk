@@ -1,5 +1,6 @@
 # Added by me
 .DS_Store
+.idea/
 
 *.js
 !jest.config.js
