@@ -1,10 +1,10 @@
 import * as cdk from 'aws-cdk-lib';
 import {Construct} from 'constructs';
-import {Code, Function, Runtime} from 'aws-cdk-lib/aws-lambda';
+import {Code, FilterCriteria, Function, Runtime, StartingPosition} from 'aws-cdk-lib/aws-lambda';
 import {LambdaIntegration, RestApi} from 'aws-cdk-lib/aws-apigateway';
 import {Queue} from 'aws-cdk-lib/aws-sqs';
-import {SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
-import {AttributeType, BillingMode, Table} from "aws-cdk-lib/aws-dynamodb";
+import {DynamoEventSource, SqsEventSource} from 'aws-cdk-lib/aws-lambda-event-sources';
+import {AttributeType, BillingMode, StreamViewType, Table} from "aws-cdk-lib/aws-dynamodb";
 
 export class CdkPizzaStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -13,7 +13,8 @@ export class CdkPizzaStack extends cdk.Stack {
         // Dynamo DB
         const ordersTable = new Table(this, 'OrdersTable', {
             partitionKey: {name: 'orderId', type: AttributeType.STRING},
-            billingMode: BillingMode.PAY_PER_REQUEST
+            billingMode: BillingMode.PAY_PER_REQUEST,
+            stream: StreamViewType.NEW_AND_OLD_IMAGES
         });
 
         // SQS
@@ -66,8 +67,19 @@ export class CdkPizzaStack extends cdk.Stack {
             environment: {
                 ORDERS_TO_SEND_QUEUE_URL: ordersToSendQueue.queueUrl
             }
-        })
+        });
 
+        sendOrderFunction.addEventSource(new DynamoEventSource(ordersTable, {
+            startingPosition: StartingPosition.LATEST,
+            batchSize: 1,
+            filters: [
+                FilterCriteria.filter({
+                    eventName: ['MODIFY']
+                })
+            ]
+        }));
+
+        ordersTable.grantStreamRead(sendOrderFunction);
         ordersToSendQueue.grantSendMessages(sendOrderFunction)
 
         // API Gateway
