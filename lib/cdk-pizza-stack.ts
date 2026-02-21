@@ -48,12 +48,16 @@ export class CdkPizzaStack extends cdk.Stack {
         const prepOrderFunction = new Function(this, 'PrepOrderFunction', {
             runtime: Runtime.NODEJS_24_X,
             handler: 'handler.prepOrder',
-            code: Code.fromAsset('lib/functions')
+            code: Code.fromAsset('lib/functions'),
+            environment: {
+                ORDERS_TABLE_NAME: ordersTable.tableName
+            }
         });
 
         prepOrderFunction.addEventSource(new SqsEventSource(pendingOrdersQueue, {
             batchSize: 1
         }));
+        ordersTable.grantReadWriteData(prepOrderFunction);
 
         const sendOrderFunction = new Function(this, 'SendOrderFunction', {
             runtime: Runtime.NODEJS_24_X,
